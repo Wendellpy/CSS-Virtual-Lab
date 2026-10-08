@@ -1,19 +1,104 @@
 /**
- * HMAC Authentication and Verification Experiment
+ * HMAC Authentication and Verification Experiment (EXP-HMAC)
  * Virtual Cryptography Laboratory
  * 
- * Uses the standard W3C Web Crypto API (crypto.subtle)
- * Default Algorithm: HMAC-SHA-256
+ * Features:
+ * 1. Full Authenticated Pipeline (Encrypt-then-MAC: AES-256-CBC + HMAC-SHA-256 with Plaintext Decryption)
+ * 2. In-Transit Network Channel & Attacker Simulator (Tamper Ciphertext, HMAC, Key)
+ * 3. Standard RFC 2104 Keyed-Hash Message Authentication & Verification
+ * 4. Modification Analysis (Hamming distance, Avalanche effect, Character-by-character diff)
+ * 5. Educational Explainer on why HMAC is one-way and cannot be decrypted
+ * 6. Interactive Self-Assessment Quiz
+ * 
+ * Cryptographic API: Standard W3C Web Crypto API (crypto.subtle)
  */
 
 (function () {
   'use strict';
 
-  // --- DOM Elements Cache ---
+  // =========================================================================
+  // 1. DOM Elements Cache
+  // =========================================================================
   const tabBtns = document.querySelectorAll('.tab-btn');
   const tabPanes = document.querySelectorAll('.tab-pane');
 
-  // Generator elements
+  // Mode Switcher Elements
+  const btnModeEncryptMac = document.getElementById('btnModeEncryptMac');
+  const btnModeHmacOnly = document.getElementById('btnModeHmacOnly');
+  const panelEncryptMac = document.getElementById('panelEncryptMac');
+  const panelHmacOnly = document.getElementById('panelHmacOnly');
+  const outPanelEncryptMac = document.getElementById('outPanelEncryptMac');
+  const outPanelHmacOnly = document.getElementById('outPanelHmacOnly');
+
+  // Pipeline (Encrypt-then-MAC) - Sender
+  const pipeMessage = document.getElementById('pipeMessage');
+  const pipeKey = document.getElementById('pipeKey');
+  const pipeCipher = document.getElementById('pipeCipher');
+  const pipeHash = document.getElementById('pipeHash');
+  const btnPipeEncrypt = document.getElementById('btnPipeEncrypt');
+  const btnPipeTransmit = document.getElementById('btnPipeTransmit');
+  const btnTogglePipeKey = document.getElementById('btnTogglePipeKey');
+
+  // Pipeline - In-Transit Channel
+  const channelStatusBadge = document.getElementById('channelStatusBadge');
+  const packetIvDisplay = document.getElementById('packetIvDisplay');
+  const packetCtDisplay = document.getElementById('packetCtDisplay');
+  const packetHmacDisplay = document.getElementById('packetHmacDisplay');
+  const btnChannelClean = document.getElementById('btnChannelClean');
+  const btnChannelTamperCt = document.getElementById('btnChannelTamperCt');
+  const btnChannelTamperHmac = document.getElementById('btnChannelTamperHmac');
+  const btnChannelTamperKey = document.getElementById('btnChannelTamperKey');
+
+  // Pipeline - Receiver
+  const pipeRxCiphertext = document.getElementById('pipeRxCiphertext');
+  const pipeRxIv = document.getElementById('pipeRxIv');
+  const pipeRxKey = document.getElementById('pipeRxKey');
+  const pipeRxHmac = document.getElementById('pipeRxHmac');
+  const btnPipeVerifyDecrypt = document.getElementById('btnPipeVerifyDecrypt');
+  const btnPipeForceDecrypt = document.getElementById('btnPipeForceDecrypt');
+  const btnPipeCopySender = document.getElementById('btnPipeCopySender');
+  const btnTogglePipeRxKey = document.getElementById('btnTogglePipeRxKey');
+
+  // Pipeline - Outputs
+  const pipeSenderAlgoTag = document.getElementById('pipeSenderAlgoTag');
+  const pipeCiphertextDisplay = document.getElementById('pipeCiphertextDisplay');
+  const pipeIvDisplay = document.getElementById('pipeIvDisplay');
+  const pipeHmacDisplay = document.getElementById('pipeHmacDisplay');
+  const pipeCtLen = document.getElementById('pipeCtLen');
+  const pipeHmacLen = document.getElementById('pipeHmacLen');
+  const btnCopyPipeCt = document.getElementById('btnCopyPipeCt');
+  const btnCopyPipeIv = document.getElementById('btnCopyPipeIv');
+  const btnCopyPipeHmac = document.getElementById('btnCopyPipeHmac');
+
+  // Step-by-step simulation output elements
+  const simStepsContainer = document.getElementById('simStepsContainer');
+  const simEmptyState = document.getElementById('simEmptyState');
+  const simInputPlaintext = document.getElementById('simInputPlaintext');
+  const simInputKey = document.getElementById('simInputKey');
+  const simTransmitStatusBadge = document.getElementById('simTransmitStatusBadge');
+  const simDecryptConnector = document.getElementById('simDecryptConnector');
+  const simStep6 = document.getElementById('simStep6');
+  const simStep6Aborted = document.getElementById('simStep6Aborted');
+  const simForcedDecryptBlock = document.getElementById('simForcedDecryptBlock');
+
+  const btnSimStep5Verify = document.getElementById('btnSimStep5Verify');
+  const pipeRxStatusBadge = document.getElementById('pipeRxStatusBadge');
+  const pipeRxPendingMsg = document.getElementById('pipeRxPendingMsg');
+  const pipeHmacSuccessBanner = document.getElementById('pipeHmacSuccessBanner');
+  const pipeHmacSuccessDetails = document.getElementById('pipeHmacSuccessDetails');
+  const pipeHmacFailureBanner = document.getElementById('pipeHmacFailureBanner');
+  const pipeHmacFailureDetails = document.getElementById('pipeHmacFailureDetails');
+  const pipeDecryptedSuccessBox = document.getElementById('pipeDecryptedSuccessBox');
+  const pipeDecryptedTextDisplay = document.getElementById('pipeDecryptedTextDisplay');
+  const btnCopyDecrypted = document.getElementById('btnCopyDecrypted');
+  const pipeDecryptedAbortedBox = document.getElementById('pipeDecryptedAbortedBox');
+  const pipeForcedDecryptBox = document.getElementById('pipeForcedDecryptBox');
+  const pipeForcedDecryptErrorMsg = document.getElementById('pipeForcedDecryptErrorMsg');
+
+  // Receiver plain text field
+  const pipeRxPlainText = document.getElementById('pipeRxPlainText');
+
+  // Standard Mode - Generator Elements
   const genMessage = document.getElementById('genMessage');
   const genKey = document.getElementById('genKey');
   const genAlgorithm = document.getElementById('genAlgorithm');
@@ -27,7 +112,7 @@
   const outCharCount = document.getElementById('outCharCount');
   const outBitLength = document.getElementById('outBitLength');
 
-  // Verifier elements
+  // Standard Mode - Verifier Elements
   const verMessage = document.getElementById('verMessage');
   const verKey = document.getElementById('verKey');
   const verHmac = document.getElementById('verHmac');
@@ -41,16 +126,20 @@
   const verifyFailureDetails = document.getElementById('verifyFailureDetails');
   const verifyStatusBadge = document.getElementById('verifyStatusBadge');
 
-  // Validation alert
+  // Educational Explainer
+  const btnAttemptHmacDecrypt = document.getElementById('btnAttemptHmacDecrypt');
+  const hmacDecryptResult = document.getElementById('hmacDecryptResult');
+  const btnSwitchToPipelineFromExp = document.getElementById('btnSwitchToPipelineFromExp');
+
+  // Validation Alert
   const validationNotice = document.getElementById('validationNotice');
 
-  // Modification Analysis elements
+  // Modification Analysis Elements
   const btnTabModMsg = document.getElementById('btnTabModMsg');
   const btnTabModKey = document.getElementById('btnTabModKey');
   const sectionModMsg = document.getElementById('sectionModMsg');
   const sectionModKey = document.getElementById('sectionModKey');
 
-  // Mod Msg elements
   const modOrigMsg = document.getElementById('modOrigMsg');
   const modMsgSharedKey = document.getElementById('modMsgSharedKey');
   const modTamperedMsg = document.getElementById('modTamperedMsg');
@@ -62,7 +151,6 @@
   const statMsgAvalanchePct = document.getElementById('statMsgAvalanchePct');
   const statMsgVerdict = document.getElementById('statMsgVerdict');
 
-  // Mod Key elements
   const modKeySharedMsg = document.getElementById('modKeySharedMsg');
   const modOrigKey = document.getElementById('modOrigKey');
   const modTamperedKey = document.getElementById('modTamperedKey');
@@ -74,7 +162,7 @@
   const statKeyAvalanchePct = document.getElementById('statKeyAvalanchePct');
   const statKeyVerdict = document.getElementById('statKeyVerdict');
 
-  // Stepper elements
+  // Flow Stepper
   const flowSteps = [
     document.getElementById('step1'),
     document.getElementById('step2'),
@@ -83,7 +171,7 @@
     document.getElementById('step5')
   ];
 
-  // Preset Buttons
+  // Presets
   const loadPreset1 = document.getElementById('loadPreset1');
   const loadPreset2 = document.getElementById('loadPreset2');
   const loadPreset3 = document.getElementById('loadPreset3');
@@ -97,25 +185,134 @@
   const quizScoreText = document.getElementById('quizScoreText');
   const quizScoreMessage = document.getElementById('quizScoreMessage');
 
-  // --- Web Crypto Core Functions ---
+  // Active state tracker
+  let activeSimulationMode = 'encryptMac'; // 'encryptMac' or 'hmacOnly'
+
+  // =========================================================================
+  // 2. Cryptographic Helper Functions (Web Crypto API)
+  // =========================================================================
+
+  function bufferToHex(buffer) {
+    return Array.from(new Uint8Array(buffer))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+  }
+
+  function hexToBuffer(hex) {
+    const cleanHex = hex.trim().replace(/\s+/g, '');
+    const bytes = new Uint8Array(cleanHex.length / 2);
+    for (let i = 0; i < cleanHex.length; i += 2) {
+      bytes[i / 2] = parseInt(cleanHex.substr(i, 2), 16) || 0;
+    }
+    return bytes;
+  }
+
+  function bufferToBase64(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return window.btoa(binary);
+  }
+
+  function base64ToBuffer(base64) {
+    const binary = window.atob(base64.trim());
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+  }
 
   /**
-   * Generates an HMAC hex digest using the Web Crypto API
-   * @param {string} message - Plaintext message
-   * @param {string} secretKey - Plaintext secret key
-   * @param {string} algorithm - Hash algorithm (SHA-256, SHA-384, SHA-512)
-   * @returns {Promise<string>} Hexadecimal HMAC string
+   * Derives a 256-bit AES-CBC CryptoKey from a passphrase using SHA-256
+   */
+  async function deriveAesKey(passphrase) {
+    const encoder = new TextEncoder();
+    const keyHash = await window.crypto.subtle.digest('SHA-256', encoder.encode(passphrase));
+    return await window.crypto.subtle.importKey(
+      'raw',
+      keyHash,
+      { name: 'AES-CBC' },
+      false,
+      ['encrypt', 'decrypt']
+    );
+  }
+
+  /**
+   * Derives an HMAC CryptoKey from a passphrase
+   */
+  async function deriveHmacKey(passphrase, hashAlgo = 'SHA-256') {
+    const encoder = new TextEncoder();
+    return await window.crypto.subtle.importKey(
+      'raw',
+      encoder.encode(passphrase),
+      {
+        name: 'HMAC',
+        hash: { name: hashAlgo }
+      },
+      false,
+      ['sign', 'verify']
+    );
+  }
+
+  /**
+   * Encrypts plaintext message with AES-256-CBC
+   */
+  async function encryptAesCbc(plaintext, aesKey) {
+    const encoder = new TextEncoder();
+    const iv = window.crypto.getRandomValues(new Uint8Array(16));
+    const ciphertextBuffer = await window.crypto.subtle.encrypt(
+      { name: 'AES-CBC', iv },
+      aesKey,
+      encoder.encode(plaintext)
+    );
+    return {
+      iv,
+      ivHex: bufferToHex(iv),
+      ciphertextBuffer,
+      ciphertextBase64: bufferToBase64(ciphertextBuffer)
+    };
+  }
+
+  /**
+   * Decrypts AES-256-CBC ciphertext buffer using IV and AES key
+   */
+  async function decryptAesCbc(ciphertextBuffer, iv, aesKey) {
+    const decryptedBuffer = await window.crypto.subtle.decrypt(
+      { name: 'AES-CBC', iv },
+      aesKey,
+      ciphertextBuffer
+    );
+    const decoder = new TextDecoder();
+    return decoder.decode(decryptedBuffer);
+  }
+
+  /**
+   * Computes HMAC over concatenated IV + Ciphertext (Encrypt-then-MAC standard)
+   */
+  async function computeHmacOverPayload(ivBytes, ciphertextBytes, hmacKey) {
+    const combined = new Uint8Array(ivBytes.byteLength + ciphertextBytes.byteLength);
+    combined.set(new Uint8Array(ivBytes), 0);
+    combined.set(new Uint8Array(ciphertextBytes), ivBytes.byteLength);
+
+    const signature = await window.crypto.subtle.sign(
+      'HMAC',
+      hmacKey,
+      combined
+    );
+    return bufferToHex(signature);
+  }
+
+  /**
+   * Standard HMAC generation over string data
    */
   async function computeHmacHex(message, secretKey, algorithm = 'SHA-256') {
-    if (!window.crypto || !window.crypto.subtle) {
-      throw new Error('Web Crypto API is not supported in this browser environment. Ensure HTTPS or localhost is used.');
-    }
-
     const encoder = new TextEncoder();
     const keyData = encoder.encode(secretKey);
     const messageData = encoder.encode(message);
 
-    // Import secret key for HMAC
     const cryptoKey = await window.crypto.subtle.importKey(
       'raw',
       keyData,
@@ -127,20 +324,17 @@
       ['sign', 'verify']
     );
 
-    // Sign the message data to generate HMAC
     const signatureBuffer = await window.crypto.subtle.sign(
       'HMAC',
       cryptoKey,
       messageData
     );
 
-    // Convert ArrayBuffer to Hex String
-    const hashArray = Array.from(new Uint8Array(signatureBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    return bufferToHex(signatureBuffer);
   }
 
   /**
-   * Counts differing bits (Hamming Distance) between two hex strings
+   * Calculates Hamming Distance (differing bits) between two hex strings
    */
   function calculateHammingDistance(hexA, hexB) {
     let diffBits = 0;
@@ -158,7 +352,7 @@
   }
 
   /**
-   * Generates colored character diff between two hex strings
+   * Generates colored character diff HTML
    */
   function generateHexDiffHtml(origHex, newHex) {
     let html = '';
@@ -175,7 +369,10 @@
     return html;
   }
 
-  // --- Stepper Helper ---
+  // =========================================================================
+  // 3. UI Helpers
+  // =========================================================================
+
   function setFlowStep(stepIndex) {
     flowSteps.forEach((step, idx) => {
       if (step) {
@@ -188,60 +385,476 @@
     });
   }
 
-  // --- Validation Notice Helper ---
   function showValidation(msg) {
-    validationNotice.textContent = '⚠️ ' + msg;
+    if (!validationNotice) return;
+    // Keep the SVG icon, just update text after it
+    const svgIcon = validationNotice.querySelector('svg');
+    validationNotice.textContent = msg;
+    if (svgIcon) validationNotice.prepend(svgIcon);
     validationNotice.style.display = 'block';
     setTimeout(() => {
-      validationNotice.style.display = 'none';
+      if (validationNotice) validationNotice.style.display = 'none';
     }, 4500);
   }
 
   function clearValidation() {
-    validationNotice.style.display = 'none';
+    if (validationNotice) validationNotice.style.display = 'none';
   }
 
-  // --- Tab Navigation Logic ---
-  tabBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-      const targetTab = btn.getAttribute('data-tab');
+  // =========================================================================
+  // 4. Mode Switcher (Full Pipeline vs Standard HMAC)
+  // =========================================================================
 
-      tabBtns.forEach(b => {
-        b.classList.remove('active');
-        b.setAttribute('aria-selected', 'false');
-      });
-      tabPanes.forEach(p => p.classList.remove('active'));
+  function switchSimulationMode(mode) {
+    activeSimulationMode = mode;
+    if (mode === 'encryptMac') {
+      btnModeEncryptMac.classList.add('active');
+      btnModeHmacOnly.classList.remove('active');
+      panelEncryptMac.style.display = 'block';
+      panelHmacOnly.style.display = 'none';
+      outPanelEncryptMac.style.display = 'block';
+      outPanelHmacOnly.style.display = 'none';
+    } else {
+      btnModeHmacOnly.classList.add('active');
+      btnModeEncryptMac.classList.remove('active');
+      panelHmacOnly.style.display = 'block';
+      panelEncryptMac.style.display = 'none';
+      outPanelHmacOnly.style.display = 'block';
+      outPanelEncryptMac.style.display = 'none';
+    }
+  }
 
-      btn.classList.add('active');
-      btn.setAttribute('aria-selected', 'true');
+  if (btnModeEncryptMac) {
+    btnModeEncryptMac.addEventListener('click', () => switchSimulationMode('encryptMac'));
+  }
+  if (btnModeHmacOnly) {
+    btnModeHmacOnly.addEventListener('click', () => switchSimulationMode('hmacOnly'));
+  }
 
-      const targetPane = document.getElementById('pane' + targetTab.charAt(0).toUpperCase() + targetTab.slice(1));
-      if (targetPane) {
-        targetPane.classList.add('active');
+  if (btnSwitchToPipelineFromExp) {
+    btnSwitchToPipelineFromExp.addEventListener('click', () => {
+      switchSimulationMode('encryptMac');
+      window.scrollTo({ top: panelEncryptMac.offsetTop - 100, behavior: 'smooth' });
+    });
+  }
+
+  // Password Visibility Toggles
+  if (btnTogglePipeKey) {
+    btnTogglePipeKey.addEventListener('click', () => {
+      const isPass = pipeKey.type === 'password';
+      pipeKey.type = isPass ? 'text' : 'password';
+      btnTogglePipeKey.textContent = isPass ? 'Hide' : 'Show';
+    });
+  }
+
+  if (btnTogglePipeRxKey) {
+    btnTogglePipeRxKey.addEventListener('click', () => {
+      const isPass = pipeRxKey.type === 'password';
+      pipeRxKey.type = isPass ? 'text' : 'password';
+      btnTogglePipeRxKey.textContent = isPass ? 'Hide' : 'Show';
+    });
+  }
+
+  if (btnToggleGenKey) {
+    btnToggleGenKey.addEventListener('click', () => {
+      const isPass = genKey.type === 'password';
+      genKey.type = isPass ? 'text' : 'password';
+      btnToggleGenKey.textContent = isPass ? 'Hide' : 'Show';
+    });
+  }
+
+  if (btnToggleVerKey) {
+    btnToggleVerKey.addEventListener('click', () => {
+      const isPass = verKey.type === 'password';
+      verKey.type = isPass ? 'text' : 'password';
+      btnToggleVerKey.textContent = isPass ? 'Hide' : 'Show';
+    });
+  }
+
+  // =========================================================================
+  // 5. Full Pipeline: Encrypt-then-MAC Implementation
+  // =========================================================================
+
+  let currentPipelinePackage = {
+    plaintext: '',
+    key: '',
+    hashAlgo: 'SHA-256',
+    iv: null,
+    ivHex: '',
+    ciphertextBuffer: null,
+    ciphertextBase64: '',
+    hmacHex: ''
+  };
+
+  let activeChannelTamper = 'clean'; // 'clean', 'tamper_ct', 'tamper_hmac', 'tamper_key'
+
+  async function handlePipeEncrypt() {
+    clearValidation();
+    const msg = pipeMessage.value;
+    const key = pipeKey.value;
+    const hashAlgo = pipeHash.value;
+
+    if (!key && !msg) {
+      showValidation('Please provide both message plaintext and secret key.');
+      return;
+    }
+
+    if (!key) {
+      showValidation('Secret key cannot be empty.');
+      return;
+    }
+
+    try {
+      btnPipeEncrypt.disabled = true;
+      btnPipeEncrypt.style.opacity = '0.7';
+
+      // 1. Derive AES key and HMAC key
+      const aesKey = await deriveAesKey(key);
+      const hmacKey = await deriveHmacKey(key, hashAlgo);
+
+      // 2. Encrypt with AES-256-CBC
+      const encResult = await encryptAesCbc(msg, aesKey);
+
+      // 3. Compute HMAC over (IV + Ciphertext)
+      const hmacHex = await computeHmacOverPayload(encResult.iv, encResult.ciphertextBuffer, hmacKey);
+
+      currentPipelinePackage = {
+        plaintext: msg,
+        key: key,
+        hashAlgo: hashAlgo,
+        iv: encResult.iv,
+        ivHex: encResult.ivHex,
+        ciphertextBuffer: encResult.ciphertextBuffer,
+        ciphertextBase64: encResult.ciphertextBase64,
+        hmacHex: hmacHex
+      };
+
+      // 4. Update Sender Output UI
+      pipeSenderAlgoTag.textContent = `AES-256-CBC + HMAC-${hashAlgo}`;
+      pipeCiphertextDisplay.textContent = encResult.ciphertextBase64;
+      pipeIvDisplay.textContent = encResult.ivHex;
+      pipeHmacDisplay.textContent = hmacHex;
+      pipeCtLen.textContent = encResult.ciphertextBuffer.byteLength;
+      pipeHmacLen.textContent = hmacHex.length;
+
+      // Update Receiver Expected Plain Text box with the sender's plain text
+      if (pipeRxPlainText) {
+        pipeRxPlainText.value = msg;
       }
 
-      // If switching to simulation, refresh analysis
-      if (targetTab === 'simulation') {
-        updateMessageAnalysis();
-        updateKeyAnalysis();
+      // 4b. Show the step-by-step simulation and populate Steps 1-3
+      if (simEmptyState) simEmptyState.style.display = 'none';
+      if (simStepsContainer) simStepsContainer.style.display = 'block';
+      if (simInputPlaintext) simInputPlaintext.textContent = msg || '(empty)';
+      if (simInputKey) simInputKey.textContent = '\u2022'.repeat(Math.min(key.length, 12));
+      if (simTransmitStatusBadge) {
+        simTransmitStatusBadge.textContent = 'Sent';
+        simTransmitStatusBadge.style.background = 'rgba(59,130,246,0.2)';
+        simTransmitStatusBadge.style.color = '#93c5fd';
+      }
+
+      // 5. Update Channel packet display and sync to receiver
+      updateChannelDisplay();
+      applyChannelToReceiver();
+
+      // Reset Receiver Output displays to pending until verified
+      resetPipeReceiverOutput();
+
+      setFlowStep(2); // Output ready
+
+      // Also sync to modification analysis baseline
+      modOrigMsg.value = msg;
+      modMsgSharedKey.value = key;
+      modKeySharedMsg.value = msg;
+      modOrigKey.value = key;
+      updateMessageAnalysis();
+      updateKeyAnalysis();
+
+    } catch (err) {
+      console.error('Pipe Encrypt Error:', err);
+      showValidation('Encryption failed: ' + err.message);
+    } finally {
+      btnPipeEncrypt.disabled = false;
+      btnPipeEncrypt.style.opacity = '1';
+    }
+  }
+
+  function updateChannelDisplay() {
+    packetIvDisplay.textContent = currentPipelinePackage.ivHex || '-';
+    packetCtDisplay.textContent = currentPipelinePackage.ciphertextBase64 || '-';
+    packetHmacDisplay.textContent = currentPipelinePackage.hmacHex || '-';
+  }
+
+  function setChannelTamper(mode) {
+    activeChannelTamper = mode;
+
+    [btnChannelClean, btnChannelTamperCt, btnChannelTamperHmac, btnChannelTamperKey].forEach(b => {
+      if (b) b.classList.remove('chip-active');
+    });
+
+    if (mode === 'clean') {
+      if (btnChannelClean) btnChannelClean.classList.add('chip-active');
+      channelStatusBadge.className = 'badge-tag badge-green';
+      channelStatusBadge.textContent = 'Status: Clean (No Tampering)';
+    } else if (mode === 'tamper_ct') {
+      if (btnChannelTamperCt) btnChannelTamperCt.classList.add('chip-active');
+      channelStatusBadge.className = 'badge-tag badge-amber';
+      channelStatusBadge.textContent = 'Status: ⚠️ Ciphertext Tampered';
+    } else if (mode === 'tamper_hmac') {
+      if (btnChannelTamperHmac) btnChannelTamperHmac.classList.add('chip-active');
+      channelStatusBadge.className = 'badge-tag badge-amber';
+      channelStatusBadge.textContent = 'Status: ⚠️ HMAC Tag Tampered';
+    } else if (mode === 'tamper_key') {
+      if (btnChannelTamperKey) btnChannelTamperKey.classList.add('chip-active');
+      channelStatusBadge.className = 'badge-tag badge-amber';
+      channelStatusBadge.textContent = 'Status: ⚠️ Wrong Receiver Key';
+    }
+
+    applyChannelToReceiver();
+  }
+
+  function applyChannelToReceiver() {
+    if (!currentPipelinePackage.ciphertextBase64) return;
+
+    pipeRxIv.value = currentPipelinePackage.ivHex;
+    if (pipeRxPlainText) {
+      pipeRxPlainText.value = currentPipelinePackage.plaintext;
+    }
+
+    if (activeChannelTamper === 'clean') {
+      pipeRxCiphertext.value = currentPipelinePackage.ciphertextBase64;
+      pipeRxHmac.value = currentPipelinePackage.hmacHex;
+      pipeRxKey.value = currentPipelinePackage.key;
+    } else if (activeChannelTamper === 'tamper_ct') {
+      const orig = currentPipelinePackage.ciphertextBase64;
+      // Change the first character in base64
+      const firstChar = orig.charAt(0);
+      const flipped = (firstChar === 'A' ? 'B' : 'A');
+      pipeRxCiphertext.value = flipped + orig.slice(1);
+      pipeRxHmac.value = currentPipelinePackage.hmacHex;
+      pipeRxKey.value = currentPipelinePackage.key;
+    } else if (activeChannelTamper === 'tamper_hmac') {
+      pipeRxCiphertext.value = currentPipelinePackage.ciphertextBase64;
+      const orig = currentPipelinePackage.hmacHex;
+      // Corrupt first 4 hex nibbles
+      const corrupted = (orig.startsWith('ffff') ? '0000' : 'ffff') + orig.slice(4);
+      pipeRxHmac.value = corrupted;
+      pipeRxKey.value = currentPipelinePackage.key;
+    } else if (activeChannelTamper === 'tamper_key') {
+      pipeRxCiphertext.value = currentPipelinePackage.ciphertextBase64;
+      pipeRxHmac.value = currentPipelinePackage.hmacHex;
+      pipeRxKey.value = currentPipelinePackage.key + '_wrong';
+    }
+  }
+
+  function resetPipeReceiverOutput() {
+    if (pipeRxPendingMsg) pipeRxPendingMsg.style.display = 'block';
+    if (pipeHmacSuccessBanner) pipeHmacSuccessBanner.style.display = 'none';
+    if (pipeHmacFailureBanner) pipeHmacFailureBanner.style.display = 'none';
+    if (pipeForcedDecryptBox) pipeForcedDecryptBox.style.display = 'none';
+    if (pipeRxStatusBadge) {
+      pipeRxStatusBadge.textContent = 'Pending';
+      pipeRxStatusBadge.className = 'badge-tag';
+      pipeRxStatusBadge.style.background = '#33261f';
+      pipeRxStatusBadge.style.color = '#a89587';
+    }
+    // Reset step 6 blocks
+    if (simStep6) simStep6.style.display = 'none';
+    if (simStep6Aborted) simStep6Aborted.style.display = 'none';
+    if (simDecryptConnector) simDecryptConnector.style.display = 'none';
+    if (simForcedDecryptBlock) simForcedDecryptBlock.style.display = 'none';
+  }
+
+  async function handlePipeVerifyAndDecrypt() {
+    clearValidation();
+    const rxCtBase64 = pipeRxCiphertext.value.trim();
+    const rxIvHex = pipeRxIv.value.trim();
+    const rxKey = pipeRxKey.value;
+    const rxHmac = pipeRxHmac.value.trim().toLowerCase();
+    const hashAlgo = pipeHash.value;
+
+    if (!rxCtBase64 || !rxIvHex || !rxHmac || !rxKey) {
+      showValidation('Please ensure Received Ciphertext, IV, Secret Key, and HMAC are all provided.');
+      return;
+    }
+
+    try {
+      btnPipeVerifyDecrypt.disabled = true;
+      btnPipeVerifyDecrypt.style.opacity = '0.7';
+      if (btnSimStep5Verify) {
+        btnSimStep5Verify.disabled = true;
+        btnSimStep5Verify.style.opacity = '0.7';
+      }
+
+      pipeRxPendingMsg.style.display = 'none';
+      pipeForcedDecryptBox.style.display = 'none';
+
+      // Parse binary IV and Ciphertext
+      const rxIvBytes = hexToBuffer(rxIvHex);
+      const rxCtBuffer = base64ToBuffer(rxCtBase64);
+
+      // 1. Recalculate HMAC over (rxIv + rxCt) using receiver's key
+      const hmacKey = await deriveHmacKey(rxKey, hashAlgo);
+      const recalculatedHmac = (await computeHmacOverPayload(rxIvBytes, rxCtBuffer, hmacKey)).toLowerCase();
+
+      const isHmacValid = (recalculatedHmac === rxHmac);
+
+      if (isHmacValid) {
+        // Step 5a: Valid HMAC Tag
+        if (pipeHmacFailureBanner) pipeHmacFailureBanner.style.display = 'none';
+        if (pipeHmacSuccessBanner) pipeHmacSuccessBanner.style.display = 'flex';
+        if (pipeHmacSuccessDetails) pipeHmacSuccessDetails.innerHTML = `
+          <strong>Recalculated HMAC:</strong> ${recalculatedHmac}<br>
+          <strong>Supplied HMAC:</strong> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${rxHmac}<br>
+          <em>Status: Tag Match confirmed. Ciphertext integrity and authenticity are valid!</em>
+        `;
+
+        // Step 6: Decrypt Ciphertext back to Plaintext
+        const aesKey = await deriveAesKey(rxKey);
+        const decryptedPlaintext = await decryptAesCbc(rxCtBuffer, rxIvBytes, aesKey);
+
+        // Show Step 6 success block
+        if (simDecryptConnector) simDecryptConnector.style.display = 'flex';
+        if (simStep6) simStep6.style.display = 'block';
+        if (simStep6Aborted) simStep6Aborted.style.display = 'none';
+        if (simForcedDecryptBlock) simForcedDecryptBlock.style.display = 'none';
+        if (pipeDecryptedTextDisplay) pipeDecryptedTextDisplay.textContent = decryptedPlaintext;
+
+        pipeRxStatusBadge.textContent = 'Verified & Decrypted';
+        pipeRxStatusBadge.className = 'badge-tag';
+        pipeRxStatusBadge.style.background = 'rgba(63, 185, 80, 0.2)';
+        pipeRxStatusBadge.style.color = '#7ee787';
+
+        setFlowStep(4); // Verified & Decrypted
+      } else {
+        // Step 5a: HMAC Failure -> ABORT DECRYPTION
+        if (pipeHmacSuccessBanner) pipeHmacSuccessBanner.style.display = 'none';
+        if (pipeHmacFailureBanner) pipeHmacFailureBanner.style.display = 'flex';
+        if (pipeHmacFailureDetails) pipeHmacFailureDetails.innerHTML = `
+          <strong>Recalculated HMAC:</strong> ${recalculatedHmac}<br>
+          <strong>Supplied HMAC:</strong> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${rxHmac}<br>
+          <em>Mismatch detected! In-transit tampering or unauthorized key identified.</em>
+        `;
+
+        // Show Step 6 aborted block
+        if (simDecryptConnector) simDecryptConnector.style.display = 'flex';
+        if (simStep6) simStep6.style.display = 'none';
+        if (simStep6Aborted) simStep6Aborted.style.display = 'block';
+        if (simForcedDecryptBlock) simForcedDecryptBlock.style.display = 'none';
+
+        pipeRxStatusBadge.textContent = 'Integrity Failed';
+        pipeRxStatusBadge.className = 'badge-tag';
+        pipeRxStatusBadge.style.background = 'rgba(248, 81, 73, 0.2)';
+        pipeRxStatusBadge.style.color = '#ff7b72';
+
+        setFlowStep(3); // Tamper detected
+      }
+
+    } catch (err) {
+      console.error('Verify & Decrypt Error:', err);
+      showValidation('Verification or decryption error: ' + err.message);
+    } finally {
+      btnPipeVerifyDecrypt.disabled = false;
+      btnPipeVerifyDecrypt.style.opacity = '1';
+      if (btnSimStep5Verify) {
+        btnSimStep5Verify.disabled = false;
+        btnSimStep5Verify.style.opacity = '1';
+      }
+    }
+  }
+
+  async function handlePipeForceDecrypt() {
+    clearValidation();
+    const rxCtBase64 = pipeRxCiphertext.value.trim();
+    const rxIvHex = pipeRxIv.value.trim();
+    const rxKey = pipeRxKey.value;
+
+    if (!rxCtBase64 || !rxIvHex || !rxKey) {
+      showValidation('Received Ciphertext, IV, and Key required for forced decryption.');
+      return;
+    }
+
+    try {
+      const rxIvBytes = hexToBuffer(rxIvHex);
+      const rxCtBuffer = base64ToBuffer(rxCtBase64);
+      const aesKey = await deriveAesKey(rxKey);
+
+      const decrypted = await decryptAesCbc(rxCtBuffer, rxIvBytes, aesKey);
+      if (simForcedDecryptBlock) simForcedDecryptBlock.style.display = 'block';
+      if (pipeForcedDecryptBox) pipeForcedDecryptBox.style.display = 'flex';
+      if (pipeForcedDecryptErrorMsg) pipeForcedDecryptErrorMsg.innerHTML = `<strong>Decrypted (Corrupted Text):</strong> "${decrypted}"`;
+    } catch (err) {
+      if (simForcedDecryptBlock) simForcedDecryptBlock.style.display = 'block';
+      if (pipeForcedDecryptBox) pipeForcedDecryptBox.style.display = 'flex';
+      if (pipeForcedDecryptErrorMsg) pipeForcedDecryptErrorMsg.innerHTML = `<strong>Cryptographic Decryption Error:</strong> ${err.message} (PKCS#7 padding validation failed because ciphertext was altered without valid HMAC!)`;
+    }
+  }
+
+  // Pipeline Button Listeners
+  if (btnPipeEncrypt) btnPipeEncrypt.addEventListener('click', handlePipeEncrypt);
+  if (btnPipeVerifyDecrypt) btnPipeVerifyDecrypt.addEventListener('click', handlePipeVerifyAndDecrypt);
+  if (btnSimStep5Verify) btnSimStep5Verify.addEventListener('click', handlePipeVerifyAndDecrypt);
+  if (btnPipeForceDecrypt) btnPipeForceDecrypt.addEventListener('click', handlePipeForceDecrypt);
+
+  if (btnPipeTransmit) {
+    btnPipeTransmit.addEventListener('click', async () => {
+      if (!currentPipelinePackage.ciphertextBase64) {
+        await handlePipeEncrypt();
+      }
+      setChannelTamper('clean');
+      const channelElem = document.querySelector('.channel-card');
+      if (channelElem) channelElem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  }
+
+  if (btnPipeCopySender) {
+    btnPipeCopySender.addEventListener('click', () => {
+      setChannelTamper('clean');
+      if (pipeRxPlainText && currentPipelinePackage.plaintext) {
+        pipeRxPlainText.value = currentPipelinePackage.plaintext;
       }
     });
-  });
+  }
 
-  // Toggle Password Visibility
-  btnToggleGenKey.addEventListener('click', () => {
-    const isPass = genKey.type === 'password';
-    genKey.type = isPass ? 'text' : 'password';
-    btnToggleGenKey.textContent = isPass ? 'Hide' : 'Show';
-  });
+  // Channel Attack Simulation Buttons
+  if (btnChannelClean) btnChannelClean.addEventListener('click', () => setChannelTamper('clean'));
+  if (btnChannelTamperCt) btnChannelTamperCt.addEventListener('click', () => setChannelTamper('tamper_ct'));
+  if (btnChannelTamperHmac) btnChannelTamperHmac.addEventListener('click', () => setChannelTamper('tamper_hmac'));
+  if (btnChannelTamperKey) btnChannelTamperKey.addEventListener('click', () => setChannelTamper('tamper_key'));
 
-  btnToggleVerKey.addEventListener('click', () => {
-    const isPass = verKey.type === 'password';
-    verKey.type = isPass ? 'text' : 'password';
-    btnToggleVerKey.textContent = isPass ? 'Hide' : 'Show';
-  });
+  // Copy Buttons for Pipeline
+  function setupCopyButton(btn, textGetter) {
+    if (!btn) return;
+    btn.addEventListener('click', async () => {
+      const text = textGetter();
+      if (!text || text === '-' || text.includes('Click "Encrypt')) {
+        showValidation('Nothing to copy yet.');
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(text);
+        const originalLabel = btn.textContent;
+        btn.textContent = 'Copied!';
+        btn.style.background = '#2e7d32';
+        setTimeout(() => {
+          btn.textContent = originalLabel;
+          btn.style.background = '';
+        }, 1600);
+      } catch {
+        showValidation('Failed to copy to clipboard.');
+      }
+    });
+  }
 
-  // --- Feature 1: Generate HMAC ---
+  setupCopyButton(btnCopyPipeCt, () => pipeCiphertextDisplay.textContent.trim());
+  setupCopyButton(btnCopyPipeIv, () => pipeIvDisplay.textContent.trim());
+  setupCopyButton(btnCopyPipeHmac, () => pipeHmacDisplay.textContent.trim());
+  setupCopyButton(btnCopyDecrypted, () => pipeDecryptedTextDisplay.textContent.trim());
+
+  // =========================================================================
+  // 6. Standard HMAC Mode (RFC 2104) Implementation
+  // =========================================================================
+
   async function handleGenerateHmac() {
     clearValidation();
     const msg = genMessage.value;
@@ -249,7 +862,7 @@
     const algo = genAlgorithm.value;
 
     if (!key && !msg) {
-      showValidation('Test Case 5: Empty input detected. Please provide both message and secret key.');
+      showValidation('Please provide both message and secret key.');
       return;
     }
 
@@ -264,16 +877,15 @@
 
       const hexHmac = await computeHmacHex(msg, key, algo);
 
-      // Render HMAC output
       generatedHmacDisplay.innerHTML = `<span style="color:#7ee787;">${hexHmac}</span>`;
       outCharCount.textContent = hexHmac.length;
       outBitLength.textContent = hexHmac.length * 4;
       outputAlgoTag.textContent = `HMAC-${algo}`;
       hexLenLabel.textContent = `Hexadecimal Digest (${hexHmac.length} chars / ${hexHmac.length * 4} bits)`;
 
-      setFlowStep(2); // Step 3: Output rendered
+      setFlowStep(2);
 
-      // Automatically sync baseline values to modification analysis
+      // Sync baseline to modification analysis
       modOrigMsg.value = msg;
       modMsgSharedKey.value = key;
       modKeySharedMsg.value = msg;
@@ -291,53 +903,34 @@
     }
   }
 
-  btnGenerate.addEventListener('click', handleGenerateHmac);
+  if (btnGenerate) btnGenerate.addEventListener('click', handleGenerateHmac);
 
-  // Copy Generated HMAC to clipboard
-  btnCopyGenerated.addEventListener('click', async () => {
-    const text = generatedHmacDisplay.textContent.trim();
-    if (!text || text.includes('Click "Generate HMAC"')) {
-      showValidation('No HMAC generated yet to copy.');
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(text);
-      const originalLabel = btnCopyGenerated.textContent;
-      btnCopyGenerated.textContent = 'Copied!';
-      btnCopyGenerated.style.background = '#2e7d32';
-      setTimeout(() => {
-        btnCopyGenerated.textContent = originalLabel;
-        btnCopyGenerated.style.background = '';
-      }, 1600);
-    } catch {
-      // Fallback
-      showValidation('Failed to copy to clipboard.');
-    }
-  });
+  setupCopyButton(btnCopyGenerated, () => generatedHmacDisplay.textContent.trim());
 
-  // Transfer generator inputs & output to verification
-  btnSendToVerify.addEventListener('click', async () => {
-    verMessage.value = genMessage.value;
-    verKey.value = genKey.value;
-    const generatedText = generatedHmacDisplay.textContent.trim();
-    if (!generatedText || generatedText.includes('Click "Generate HMAC"')) {
-      // Generate first if not yet done
-      await handleGenerateHmac();
-    }
-    verHmac.value = generatedHmacDisplay.textContent.trim();
-    verHmac.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  });
+  if (btnSendToVerify) {
+    btnSendToVerify.addEventListener('click', async () => {
+      verMessage.value = genMessage.value;
+      verKey.value = genKey.value;
+      const generatedText = generatedHmacDisplay.textContent.trim();
+      if (!generatedText || generatedText.includes('Click "Generate HMAC"')) {
+        await handleGenerateHmac();
+      }
+      verHmac.value = generatedHmacDisplay.textContent.trim();
+      verHmac.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  }
 
-  btnFillFromGen.addEventListener('click', () => {
-    verMessage.value = genMessage.value;
-    verKey.value = genKey.value;
-    const generatedText = generatedHmacDisplay.textContent.trim();
-    if (generatedText && !generatedText.includes('Click "Generate HMAC"')) {
-      verHmac.value = generatedText;
-    }
-  });
+  if (btnFillFromGen) {
+    btnFillFromGen.addEventListener('click', () => {
+      verMessage.value = genMessage.value;
+      verKey.value = genKey.value;
+      const generatedText = generatedHmacDisplay.textContent.trim();
+      if (generatedText && !generatedText.includes('Click "Generate HMAC"')) {
+        verHmac.value = generatedText;
+      }
+    });
+  }
 
-  // --- Feature 2: Verify HMAC ---
   async function handleVerifyHmac() {
     clearValidation();
     const message = verMessage.value;
@@ -359,12 +952,10 @@
       btnVerify.disabled = true;
       btnVerify.style.opacity = '0.7';
 
-      // Recalculate HMAC strictly using the provided message and secret key
       const recalculatedHmac = (await computeHmacHex(message, key, algo)).toLowerCase();
 
       verifyPendingMsg.style.display = 'none';
 
-      // Cryptographic comparison:
       const isMatch = (recalculatedHmac === suppliedHmac);
 
       if (isMatch) {
@@ -380,7 +971,7 @@
           <strong>Supplied HMAC:</strong> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${suppliedHmac}<br>
           <em>Status: Identical match. Message authenticity and cryptographic integrity confirmed.</em>
         `;
-        setFlowStep(4); // Step 5: Verified
+        setFlowStep(4);
       } else {
         verifySuccessBanner.style.display = 'none';
         verifyFailureBanner.style.display = 'flex';
@@ -394,7 +985,7 @@
           <strong>Supplied HMAC:</strong> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${suppliedHmac}<br>
           <em>Mismatch detected! The message content has been altered, or the secret key is invalid.</em>
         `;
-        setFlowStep(3); // Tamper detected
+        setFlowStep(3);
       }
 
     } catch (err) {
@@ -406,29 +997,48 @@
     }
   }
 
-  btnVerify.addEventListener('click', handleVerifyHmac);
+  if (btnVerify) btnVerify.addEventListener('click', handleVerifyHmac);
 
-  // --- Feature 3 & 4: Modification Analysis ---
+  // Educational "Attempt Decryption" on HMAC explainer toggle
+  if (btnAttemptHmacDecrypt) {
+    btnAttemptHmacDecrypt.addEventListener('click', () => {
+      const isVisible = hmacDecryptResult.style.display === 'block';
+      hmacDecryptResult.style.display = isVisible ? 'none' : 'block';
+      // Update button text (keep SVG icon for show state)
+      const svgSearch = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>';
+      const svgClose = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>';
+      btnAttemptHmacDecrypt.innerHTML = isVisible
+        ? svgSearch + ' Attempt HMAC "Decryption"'
+        : svgClose + ' Hide Decryption Explainer';
+    });
+  }
 
-  // Tab switching between Section A and Section B
-  btnTabModMsg.addEventListener('click', () => {
-    btnTabModMsg.classList.add('active');
-    btnTabModKey.classList.remove('active');
-    sectionModMsg.style.display = 'block';
-    sectionModKey.style.display = 'none';
-    updateMessageAnalysis();
-  });
+  // =========================================================================
+  // 7. Modification Analysis (Avalanche Effect Demonstration)
+  // =========================================================================
 
-  btnTabModKey.addEventListener('click', () => {
-    btnTabModKey.classList.add('active');
-    btnTabModMsg.classList.remove('active');
-    sectionModKey.style.display = 'block';
-    sectionModMsg.style.display = 'none';
-    updateKeyAnalysis();
-  });
+  if (btnTabModMsg) {
+    btnTabModMsg.addEventListener('click', () => {
+      btnTabModMsg.classList.add('active');
+      btnTabModKey.classList.remove('active');
+      sectionModMsg.style.display = 'block';
+      sectionModKey.style.display = 'none';
+      updateMessageAnalysis();
+    });
+  }
 
-  // Section A: Update Message Modification Analysis
+  if (btnTabModKey) {
+    btnTabModKey.addEventListener('click', () => {
+      btnTabModKey.classList.add('active');
+      btnTabModMsg.classList.remove('active');
+      sectionModKey.style.display = 'block';
+      sectionModMsg.style.display = 'none';
+      updateKeyAnalysis();
+    });
+  }
+
   async function updateMessageAnalysis() {
+    if (!modOrigMsg || !modMsgSharedKey || !modTamperedMsg) return;
     const origMsg = modOrigMsg.value;
     const key = modMsgSharedKey.value;
     const tamperedMsg = modTamperedMsg.value;
@@ -443,7 +1053,6 @@
       modOrigMsgHmac.textContent = origHmac;
       modTamperedMsgHmac.textContent = tamperedHmac;
 
-      // Calculate diffs
       let hexDiffCount = 0;
       for (let i = 0; i < origHmac.length; i++) {
         if (origHmac[i] !== tamperedHmac[i]) hexDiffCount++;
@@ -473,8 +1082,8 @@
     }
   }
 
-  // Section B: Update Secret Key Modification Analysis
   async function updateKeyAnalysis() {
+    if (!modKeySharedMsg || !modOrigKey || !modTamperedKey) return;
     const msg = modKeySharedMsg.value;
     const origKey = modOrigKey.value;
     const tamperedKey = modTamperedKey.value;
@@ -518,219 +1127,318 @@
     }
   }
 
-  // Real-time input listeners for Analysis
-  modOrigMsg.addEventListener('input', updateMessageAnalysis);
-  modMsgSharedKey.addEventListener('input', updateMessageAnalysis);
-  modTamperedMsg.addEventListener('input', updateMessageAnalysis);
+  // Analysis Inputs Listeners
+  if (modOrigMsg) modOrigMsg.addEventListener('input', updateMessageAnalysis);
+  if (modMsgSharedKey) modMsgSharedKey.addEventListener('input', updateMessageAnalysis);
+  if (modTamperedMsg) modTamperedMsg.addEventListener('input', updateMessageAnalysis);
 
-  modKeySharedMsg.addEventListener('input', updateKeyAnalysis);
-  modOrigKey.addEventListener('input', updateKeyAnalysis);
-  modTamperedKey.addEventListener('input', updateKeyAnalysis);
+  if (modKeySharedMsg) modKeySharedMsg.addEventListener('input', updateKeyAnalysis);
+  if (modOrigKey) modOrigKey.addEventListener('input', updateKeyAnalysis);
+  if (modTamperedKey) modTamperedKey.addEventListener('input', updateKeyAnalysis);
 
-  // Quick Alteration Chips for Message
-  document.getElementById('quickModMsgCase').addEventListener('click', () => {
-    modTamperedMsg.value = 'Hello world';
-    updateMessageAnalysis();
-  });
-  document.getElementById('quickModMsgExcl').addEventListener('click', () => {
-    modTamperedMsg.value = 'Hello World!';
-    updateMessageAnalysis();
-  });
-  document.getElementById('quickModMsgSpace').addEventListener('click', () => {
-    modTamperedMsg.value = 'Hello World ';
-    updateMessageAnalysis();
-  });
+  // Quick Alteration Buttons
+  const btnModCase = document.getElementById('quickModMsgCase');
+  const btnModExcl = document.getElementById('quickModMsgExcl');
+  const btnModSpace = document.getElementById('quickModMsgSpace');
+  const btnKeyUpper = document.getElementById('quickModKeyUpper');
+  const btnKeyAppend = document.getElementById('quickModKeyAppend');
+  const btnKeyWrong = document.getElementById('quickModKeyWrong');
 
-  // Quick Alteration Chips for Key
-  document.getElementById('quickModKeyUpper').addEventListener('click', () => {
-    modTamperedKey.value = 'mysecretKey';
-    updateKeyAnalysis();
-  });
-  document.getElementById('quickModKeyAppend').addEventListener('click', () => {
-    modTamperedKey.value = 'mysecretkey123';
-    updateKeyAnalysis();
-  });
-  document.getElementById('quickModKeyWrong').addEventListener('click', () => {
-    modTamperedKey.value = 'wrongkey';
-    updateKeyAnalysis();
-  });
+  if (btnModCase) btnModCase.addEventListener('click', () => { modTamperedMsg.value = 'Hello world'; updateMessageAnalysis(); });
+  if (btnModExcl) btnModExcl.addEventListener('click', () => { modTamperedMsg.value = 'Hello World!'; updateMessageAnalysis(); });
+  if (btnModSpace) btnModSpace.addEventListener('click', () => { modTamperedMsg.value = 'Hello World '; updateMessageAnalysis(); });
 
-  // --- Preset Test Cases ---
-  loadPreset1.addEventListener('click', async () => {
-    // Normal Verification
-    genMessage.value = 'Hello World';
-    genKey.value = 'mysecretkey';
-    genAlgorithm.value = 'SHA-256';
-    await handleGenerateHmac();
+  if (btnKeyUpper) btnKeyUpper.addEventListener('click', () => { modTamperedKey.value = 'mysecretKey'; updateKeyAnalysis(); });
+  if (btnKeyAppend) btnKeyAppend.addEventListener('click', () => { modTamperedKey.value = 'mysecretkey123'; updateKeyAnalysis(); });
+  if (btnKeyWrong) btnKeyWrong.addEventListener('click', () => { modTamperedKey.value = 'wrongkey'; updateKeyAnalysis(); });
 
-    verMessage.value = 'Hello World';
-    verKey.value = 'mysecretkey';
-    verHmac.value = generatedHmacDisplay.textContent.trim();
-    await handleVerifyHmac();
-  });
+  // =========================================================================
+  // 8. Preset Test Cases
+  // =========================================================================
 
-  loadPreset2.addEventListener('click', async () => {
-    // Modified Message
-    genMessage.value = 'Hello World';
-    genKey.value = 'mysecretkey';
-    genAlgorithm.value = 'SHA-256';
-    await handleGenerateHmac();
+  if (loadPreset1) {
+    loadPreset1.addEventListener('click', async () => {
+      if (activeSimulationMode === 'encryptMac') {
+        pipeMessage.value = 'Hello World';
+        pipeKey.value = 'mysecretkey';
+        pipeHash.value = 'SHA-256';
+        await handlePipeEncrypt();
+        setChannelTamper('clean');
+        await handlePipeVerifyAndDecrypt();
+      } else {
+        genMessage.value = 'Hello World';
+        genKey.value = 'mysecretkey';
+        genAlgorithm.value = 'SHA-256';
+        await handleGenerateHmac();
+        verMessage.value = 'Hello World';
+        verKey.value = 'mysecretkey';
+        verHmac.value = generatedHmacDisplay.textContent.trim();
+        await handleVerifyHmac();
+      }
+    });
+  }
 
-    verMessage.value = 'Hello World!'; // Note the exclamation mark
-    verKey.value = 'mysecretkey';
-    verHmac.value = generatedHmacDisplay.textContent.trim();
-    await handleVerifyHmac();
+  if (loadPreset2) {
+    loadPreset2.addEventListener('click', async () => {
+      if (activeSimulationMode === 'encryptMac') {
+        pipeMessage.value = 'Hello World';
+        pipeKey.value = 'mysecretkey';
+        pipeHash.value = 'SHA-256';
+        await handlePipeEncrypt();
+        setChannelTamper('tamper_ct');
+        await handlePipeVerifyAndDecrypt();
+      } else {
+        genMessage.value = 'Hello World';
+        genKey.value = 'mysecretkey';
+        genAlgorithm.value = 'SHA-256';
+        await handleGenerateHmac();
+        verMessage.value = 'Hello World!';
+        verKey.value = 'mysecretkey';
+        verHmac.value = generatedHmacDisplay.textContent.trim();
+        await handleVerifyHmac();
 
-    // Switch to analysis tab
-    btnTabModMsg.click();
-    modOrigMsg.value = 'Hello World';
-    modTamperedMsg.value = 'Hello World!';
-    updateMessageAnalysis();
-  });
+        btnTabModMsg.click();
+        modOrigMsg.value = 'Hello World';
+        modTamperedMsg.value = 'Hello World!';
+        updateMessageAnalysis();
+      }
+    });
+  }
 
-  loadPreset3.addEventListener('click', async () => {
-    // Modified Key
-    genMessage.value = 'Hello World';
-    genKey.value = 'mysecretkey';
-    genAlgorithm.value = 'SHA-256';
-    await handleGenerateHmac();
+  if (loadPreset3) {
+    loadPreset3.addEventListener('click', async () => {
+      if (activeSimulationMode === 'encryptMac') {
+        pipeMessage.value = 'Hello World';
+        pipeKey.value = 'mysecretkey';
+        pipeHash.value = 'SHA-256';
+        await handlePipeEncrypt();
+        setChannelTamper('tamper_key');
+        await handlePipeVerifyAndDecrypt();
+      } else {
+        genMessage.value = 'Hello World';
+        genKey.value = 'mysecretkey';
+        genAlgorithm.value = 'SHA-256';
+        await handleGenerateHmac();
+        verMessage.value = 'Hello World';
+        verKey.value = 'mysecretKey';
+        verHmac.value = generatedHmacDisplay.textContent.trim();
+        await handleVerifyHmac();
 
-    verMessage.value = 'Hello World';
-    verKey.value = 'mysecretKey'; // Note capital K
-    verHmac.value = generatedHmacDisplay.textContent.trim();
-    await handleVerifyHmac();
+        btnTabModKey.click();
+        modOrigKey.value = 'mysecretkey';
+        modTamperedKey.value = 'mysecretKey';
+        updateKeyAnalysis();
+      }
+    });
+  }
 
-    btnTabModKey.click();
-    modOrigKey.value = 'mysecretkey';
-    modTamperedKey.value = 'mysecretKey';
-    updateKeyAnalysis();
-  });
+  if (loadPreset4) {
+    loadPreset4.addEventListener('click', async () => {
+      if (activeSimulationMode === 'encryptMac') {
+        pipeMessage.value = 'Hello World';
+        pipeKey.value = 'mysecretkey';
+        pipeHash.value = 'SHA-256';
+        await handlePipeEncrypt();
+        setChannelTamper('tamper_hmac');
+        await handlePipeVerifyAndDecrypt();
+      } else {
+        genMessage.value = 'Hello World';
+        genKey.value = 'mysecretkey';
+        genAlgorithm.value = 'SHA-256';
+        await handleGenerateHmac();
+        verMessage.value = 'Hello World';
+        verKey.value = 'mysecretkey';
+        const realHmac = generatedHmacDisplay.textContent.trim();
+        verHmac.value = 'ffff' + realHmac.substring(4);
+        await handleVerifyHmac();
+      }
+    });
+  }
 
-  loadPreset4.addEventListener('click', async () => {
-    // Corrupted HMAC
-    genMessage.value = 'Hello World';
-    genKey.value = 'mysecretkey';
-    genAlgorithm.value = 'SHA-256';
-    await handleGenerateHmac();
+  if (loadPresetReset) {
+    loadPresetReset.addEventListener('click', () => {
+      // Reset Pipeline
+      pipeMessage.value = 'Hello World';
+      pipeKey.value = 'mysecretkey';
+      pipeRxCiphertext.value = '';
+      pipeRxIv.value = '';
+      pipeRxKey.value = 'mysecretkey';
+      pipeRxHmac.value = '';
+      if (pipeRxPlainText) pipeRxPlainText.value = 'Hello World';
+      setChannelTamper('clean');
+      resetPipeReceiverOutput();
+      pipeCiphertextDisplay.innerHTML = '<span class="hex-placeholder">Click "Encrypt & Generate HMAC" to produce ciphertext...</span>';
+      pipeIvDisplay.textContent = '-';
+      pipeHmacDisplay.textContent = '-';
+      pipeCtLen.textContent = '0';
+      pipeHmacLen.textContent = '64';
 
-    verMessage.value = 'Hello World';
-    verKey.value = 'mysecretkey';
-    // Deliberately corrupt the first 4 characters of the HMAC
-    const realHmac = generatedHmacDisplay.textContent.trim();
-    const badHmac = 'ffff' + realHmac.substring(4);
-    verHmac.value = badHmac;
-    await handleVerifyHmac();
-  });
+      // Reset simulation output
+      if (simStepsContainer) simStepsContainer.style.display = 'none';
+      if (simEmptyState) simEmptyState.style.display = 'block';
 
-  loadPresetReset.addEventListener('click', () => {
-    genMessage.value = 'Hello World';
-    genKey.value = 'mysecretkey';
-    verMessage.value = 'Hello World';
-    verKey.value = 'mysecretkey';
-    verHmac.value = '';
-    generatedHmacDisplay.innerHTML = '<span class="hex-placeholder">Click "Generate HMAC" above to produce the authentication code...</span>';
-    outCharCount.textContent = '0';
-    outBitLength.textContent = '0';
-    verifyPendingMsg.style.display = 'block';
-    verifySuccessBanner.style.display = 'none';
-    verifyFailureBanner.style.display = 'none';
-    verifyStatusBadge.textContent = 'Pending';
-    verifyStatusBadge.className = 'badge-tag';
-    verifyStatusBadge.style.background = '#33261f';
-    verifyStatusBadge.style.color = '#a89587';
-    setFlowStep(0);
-  });
+      // Reset Standard Mode
+      genMessage.value = 'Hello World';
+      genKey.value = 'mysecretkey';
+      verMessage.value = 'Hello World';
+      verKey.value = 'mysecretkey';
+      verHmac.value = '';
+      generatedHmacDisplay.innerHTML = '<span class="hex-placeholder">Click "Generate HMAC" above to produce the authentication code...</span>';
+      outCharCount.textContent = '0';
+      outBitLength.textContent = '0';
+      verifyPendingMsg.style.display = 'block';
+      verifySuccessBanner.style.display = 'none';
+      verifyFailureBanner.style.display = 'none';
+      verifyStatusBadge.textContent = 'Pending';
+      verifyStatusBadge.className = 'badge-tag';
+      verifyStatusBadge.style.background = '#33261f';
+      verifyStatusBadge.style.color = '#a89587';
+      setFlowStep(0);
+    });
+  }
 
-  // --- Interactive Quiz Logic ---
+  // =========================================================================
+  // 9. Interactive Quiz Logic
+  // =========================================================================
+
   const quizAnswers = {
     q1: { correct: 'B', explanation: 'HMAC primarily provides message authentication and integrity verification using a symmetric secret key.' },
     q2: { correct: 'B', explanation: 'HMAC requires a plaintext message and a shared secret key.' },
     q3: { correct: 'B', explanation: 'Any change in the message alters the recalculated HMAC, causing verification to fail.' },
     q4: { correct: 'C', explanation: 'HMAC-SHA-256 is the standard default algorithm used throughout this lab.' },
     q5: { correct: 'B', explanation: 'If the secret key does not match the key used to generate the HMAC, verification fails.' },
-    q6: { correct: 'C', explanation: 'Naive concatenation Hash(Key || Message) suffers from Length Extension Attacks; HMAC prevents this with its nested inner/outer hash structure.' }
+    q6: { correct: 'C', explanation: 'Naive concatenation Hash(Key || Message) suffers from Length Extension Attacks; HMAC prevents this with its nested inner/outer hash structure.' },
+    q7: { correct: 'B', explanation: 'ipad (0x36) and opad (0x5C) are fixed byte constants repeated to the block size. They are XORed with the derived key to produce the inner and outer padded keys used in the two-pass HMAC construction.' },
+    q8: { correct: 'A', explanation: 'In Encrypt-then-MAC, the sender first encrypts the plaintext (AES), then computes the HMAC tag over the resulting ciphertext. This ensures the receiver can verify integrity before attempting decryption.' },
+    q9: { correct: 'C', explanation: 'The Avalanche Effect means that even a single-bit change in the message or key causes roughly half of the output bits to change, making HMAC outputs appear completely random and unpredictable.' },
+    q10: { correct: 'D', explanation: 'RFC 2104, published in 1997, formally specifies the HMAC algorithm (Keyed-Hashing for Message Authentication). It is also standardized by NIST in FIPS PUB 198-1.' }
   };
 
-  quizForm.addEventListener('submit', (e) => {
-    e.preventDefault();
-    let score = 0;
-    const total = Object.keys(quizAnswers).length;
+  if (quizForm) {
+    quizForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      let score = 0;
+      const total = Object.keys(quizAnswers).length;
 
-    for (let qKey in quizAnswers) {
-      const qNum = qKey.replace('q', '');
-      const card = document.querySelector(`.quiz-question-card[data-q="${qNum}"]`);
-      const selected = document.querySelector(`input[name="${qKey}"]:checked`);
-      const feedback = document.getElementById(`feedbackQ${qNum}`);
-      const options = card.querySelectorAll('.quiz-option');
+      for (let qKey in quizAnswers) {
+        const qNum = qKey.replace('q', '');
+        const card = document.querySelector(`.quiz-question-card[data-q="${qNum}"]`);
+        const selected = document.querySelector(`input[name="${qKey}"]:checked`);
+        const feedback = document.getElementById(`feedbackQ${qNum}`);
+        if (!card || !feedback) continue;
 
-      // Clear previous styles
-      options.forEach(opt => {
+        const options = card.querySelectorAll('.quiz-option');
+        options.forEach(opt => opt.classList.remove('correct', 'incorrect'));
+
+        if (!selected) {
+          feedback.className = 'quiz-feedback show-incorrect';
+          feedback.textContent = 'Please select an answer for this question.';
+          continue;
+        }
+
+        const val = selected.value;
+        const isCorrect = (val === quizAnswers[qKey].correct);
+
+        options.forEach(opt => {
+          const radio = opt.querySelector('input');
+          if (radio.value === quizAnswers[qKey].correct) {
+            opt.classList.add('correct');
+          } else if (radio.checked && !isCorrect) {
+            opt.classList.add('incorrect');
+          }
+        });
+
+        if (isCorrect) {
+          score++;
+          feedback.className = 'quiz-feedback show-correct';
+          feedback.innerHTML = `<strong>Correct!</strong> ${quizAnswers[qKey].explanation}`;
+        } else {
+          feedback.className = 'quiz-feedback show-incorrect';
+          feedback.innerHTML = `<strong>Incorrect.</strong> (Correct Answer: ${quizAnswers[qKey].correct}) ${quizAnswers[qKey].explanation}`;
+        }
+      }
+
+      quizSummaryBox.style.display = 'block';
+      quizScoreText.textContent = `${score} / ${total}`;
+
+      const pct = (score / total) * 100;
+      if (pct === 100) {
+        quizScoreMessage.innerHTML = '<span style="color:#7ee787;">Outstanding! You have mastered HMAC principles, authenticated encryption, and integrity verification.</span>';
+      } else if (pct >= 60) {
+        quizScoreMessage.innerHTML = '<span style="color:#60a5fa;">Good job! Review the Theory tab to clear up any missed concepts.</span>';
+      } else {
+        quizScoreMessage.innerHTML = '<span style="color:#fcd34d;">Keep practicing! Explore the Modification Analysis and Full Pipeline to see HMAC in action.</span>';
+      }
+
+      quizSummaryBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  }
+
+  if (btnResetQuiz) {
+    btnResetQuiz.addEventListener('click', () => {
+      quizForm.reset();
+      document.querySelectorAll('.quiz-option').forEach(opt => {
         opt.classList.remove('correct', 'incorrect');
       });
-
-      if (!selected) {
-        feedback.className = 'quiz-feedback show-incorrect';
-        feedback.textContent = 'Please select an answer for this question.';
-        continue;
-      }
-
-      const val = selected.value;
-      const isCorrect = (val === quizAnswers[qKey].correct);
-
-      // Highlight options
-      options.forEach(opt => {
-        const radio = opt.querySelector('input');
-        if (radio.value === quizAnswers[qKey].correct) {
-          opt.classList.add('correct');
-        } else if (radio.checked && !isCorrect) {
-          opt.classList.add('incorrect');
-        }
+      document.querySelectorAll('.quiz-feedback').forEach(fb => {
+        fb.className = 'quiz-feedback';
+        fb.style.display = 'none';
+        fb.textContent = '';
       });
+      quizSummaryBox.style.display = 'none';
+    });
+  }
 
-      if (isCorrect) {
-        score++;
-        feedback.className = 'quiz-feedback show-correct';
-        feedback.innerHTML = `<strong>Correct!</strong> ${quizAnswers[qKey].explanation}`;
-      } else {
-        feedback.className = 'quiz-feedback show-incorrect';
-        feedback.innerHTML = `<strong>Incorrect.</strong> (Correct Answer: ${quizAnswers[qKey].correct}) ${quizAnswers[qKey].explanation}`;
+  // =========================================================================
+  // 10. Tab Navigation
+  // =========================================================================
+
+  tabBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const targetTab = btn.getAttribute('data-tab');
+
+      tabBtns.forEach(b => {
+        b.classList.remove('active');
+        b.setAttribute('aria-selected', 'false');
+      });
+      tabPanes.forEach(p => p.classList.remove('active'));
+
+      btn.classList.add('active');
+      btn.setAttribute('aria-selected', 'true');
+
+      const targetPane = document.getElementById('pane' + targetTab.charAt(0).toUpperCase() + targetTab.slice(1));
+      if (targetPane) {
+        targetPane.classList.add('active');
       }
-    }
 
-    // Show summary box
-    quizSummaryBox.style.display = 'block';
-    quizScoreText.textContent = `${score} / ${total}`;
-
-    const pct = (score / total) * 100;
-    if (pct === 100) {
-      quizScoreMessage.innerHTML = '<span style="color:#7ee787;">Outstanding! You have mastered HMAC principles and integrity verification.</span>';
-    } else if (pct >= 60) {
-      quizScoreMessage.innerHTML = '<span style="color:#60a5fa;">Good job! Review the Theory tab to clear up any missed concepts.</span>';
-    } else {
-      quizScoreMessage.innerHTML = '<span style="color:#fcd34d;">Keep practicing! Explore the Modification Analysis to see HMAC in action.</span>';
-    }
-
-    quizSummaryBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      if (targetTab === 'simulation') {
+        updateMessageAnalysis();
+        updateKeyAnalysis();
+      }
+    });
   });
 
-  btnResetQuiz.addEventListener('click', () => {
-    quizForm.reset();
-    document.querySelectorAll('.quiz-option').forEach(opt => {
-      opt.classList.remove('correct', 'incorrect');
-    });
-    document.querySelectorAll('.quiz-feedback').forEach(fb => {
-      fb.className = 'quiz-feedback';
-      fb.style.display = 'none';
-      fb.textContent = '';
-    });
-    quizSummaryBox.style.display = 'none';
-  });
+  // =========================================================================
+  // 11. Initial Page Load
+  // =========================================================================
 
-  // --- Initial Page Setup ---
-  window.addEventListener('DOMContentLoaded', () => {
-    handleGenerateHmac();
-    updateMessageAnalysis();
-    updateKeyAnalysis();
+  window.addEventListener('DOMContentLoaded', async () => {
+    // Run initial Encrypt-then-MAC pipeline with Decryption
+    try {
+      await handlePipeEncrypt();
+      await handlePipeVerifyAndDecrypt();
+    } catch (e) {
+      console.error('Initial pipeline run error:', e);
+    }
+
+    // Run initial standard HMAC generation
+    try {
+      await handleGenerateHmac();
+      await updateMessageAnalysis();
+      await updateKeyAnalysis();
+    } catch (e) {
+      console.error('Initial HMAC run error:', e);
+    }
   });
 
 })();
