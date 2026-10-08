@@ -1,37 +1,34 @@
-# Virtual Cryptography Laboratory
+# HMAC Authentication and Verification
 
-Virtual Cryptography Laboratory is a static, browser-based practical portal for the CSS TH ISE Cryptographic Security Systems course. It provides one shared academic interface for 16 independent student experiments.
+## Group
+Group D
 
-## Stack
+## Experiment ID
+EXP04
 
-- HTML5
-- CSS3 with shared variables and responsive layouts
-- Vanilla JavaScript (ES6+)
-- Client-side cryptography libraries where an experiment requires them
-- GitHub Pages for static deployment
+## Navigation Title
+HMAC Authentication and Verification
 
-## Experiments
+## Short Description
+Generate and verify HMAC values using a secret key and analyze the effect of modifying the message or key in a virtual cryptography laboratory.
 
-MD5, SHA-1, RSA, MAC, HMAC, Kerberos, Needham-Schroeder, bcrypt, Argon2, Argon2id, Classical Encryption, Extended Euclidean Algorithm, Brute Force, Dictionary Attack, Frequency Analysis, and SSL/TLS.
+## Folder
+/experiments/hmac/
 
-## Run Locally
+## Entry File
+index.html
 
-No package installation is required. From the repository root, run:
+## Expected Navigation Link
+/experiments/hmac/
 
-```bash
-python3 -m http.server 8000
-```
+## Required Libraries
+None
 
-Open `http://localhost:8000` in a browser. A local HTTP server is recommended because experiment pages load shared assets with relative paths.
+## Input
+Plaintext message string, secret cryptographic key string, received HMAC digest for verification, and tampered message/key variants for avalanche analysis.
 
-## Branch Model
+## Output
+Cryptographic HMAC-SHA-256 digest in 64-character hexadecimal format, authenticity verification verdict (Match / Tampered), Hamming distance bit difference, and avalanche percentage.
 
-`main` is maintained by the integration team. Each experiment has a matching branch such as `group-md5` or `group-rsa`. Groups submit pull requests from their branch to `main` and work only inside their assigned `experiments/<name>/` directory.
-
-## Contribution
-
-Read [docs/GROUP_INSTRUCTIONS.md](docs/GROUP_INSTRUCTIONS.md), [docs/API_SPECS.md](docs/API_SPECS.md), and [docs/PR_RULES.md](docs/PR_RULES.md) before starting. The shared template, CSS, navigation, and portal shell are integration-owned.
-
-## Deployment
-
-The site is designed for GitHub Pages. See [docs/setup.html](docs/setup.html) for the visual setup guide and local deployment instructions.
+## Theory Summary
+HMAC (Hash-based Message Authentication Code) is a keyed-hash authentication mechanism formally specified in RFC 2104 and NIST FIPS PUB 198-1. It provides data integrity and authenticity by combining a shared secret key with an iterated cryptographic hash function such as SHA-256. Unlike naive concatenation H(Key || Message), which is vulnerable to length-extension attacks in Merkle-Damgard hash designs, HMAC uses a nested two-pass construction: HMAC(K, m) = H((K' XOR opad) || H((K' XOR ipad) || m)). In this formula, K' is the secret key padded or hashed to the hash block size B (64 bytes for SHA-256), ipad is the inner padding byte 0x36 repeated B times, and opad is the outer padding byte 0x5C repeated B times. Changing a single bit in the message or key flips approximately 50% of the output bits due to the avalanche effect. HMAC is strictly a one-way message authentication code and cannot be decrypted.
